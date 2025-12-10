@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Simulador de Sensor de Temperatura DHT22
 Simula datos de temperatura y humedad para invernadero
@@ -11,7 +10,7 @@ import os
 import logging
 import paho.mqtt.client as mqtt
 
-# ⚠️ VULNERABILIDAD CONTROLADA: Logging de credenciales (CWE-532)
+# VULNERABILIDAD CONTROLADA: Logging de credenciales (CWE-532)
 # Se loguean datos sensibles para demostración
 logging.basicConfig(
     level=logging.INFO,
@@ -47,23 +46,23 @@ class TemperatureSensor:
         self.battery_level = 100
         self.firmware_version = "1.2.3"
         
-        # ⚠️ VULNERABILIDAD CONTROLADA: Credenciales hardcodeadas (CWE-798)
+        # VULNERABILIDAD CONTROLADA: Credenciales hardcodeadas (CWE-798)
         # En un escenario real, esto permitiría acceso no autorizado
         self.admin_user = "admin"
-        self.admin_pass = "admin123"  # ❌ Contraseña débil
+        self.admin_pass = "admin123"  # Contraseña débil
         
-        logger.warning(f"⚠️  SECURITY: Hardcoded credentials detected: {self.admin_user}:{self.admin_pass}")
+        logger.warning(f" SECURITY: Hardcoded credentials detected: {self.admin_user}:{self.admin_pass}")
     
     def on_connect(self, client, userdata, flags, rc):
         """Callback cuando se conecta al broker"""
         if rc == 0:
-            logger.info(f"✅ Connected to MQTT Broker: {MQTT_BROKER}:{MQTT_PORT}")
+            logger.info(f" Connected to MQTT Broker: {MQTT_BROKER}:{MQTT_PORT}")
         else:
-            logger.error(f"❌ Connection failed with code {rc}")
+            logger.error(f" Connection failed with code {rc}")
     
     def on_disconnect(self, client, userdata, rc):
         """Callback cuando se desconecta"""
-        logger.warning(f"⚠️  Disconnected from broker (code: {rc})")
+        logger.warning(f" Disconnected from broker (code: {rc})")
     
     def generate_temperature(self) -> float:
         """Generar temperatura realista con variación diurna"""
@@ -144,7 +143,7 @@ class TemperatureSensor:
             # Iniciar loop en background
             self.client.loop_start()
             
-            logger.info(f"🌡️  Temperature Sensor {SENSOR_ID} started")
+            logger.info(f"Temperature Sensor {SENSOR_ID} started")
             logger.info(f"Publishing to: agriculture/sensors/temperature/{SENSOR_ID}")
             
             while True:
@@ -159,18 +158,18 @@ class TemperatureSensor:
                 )
                 
                 if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                    logger.info(f"📤 Published: Temp={payload['readings']['temperature']['value']}°C, "
+                    logger.info(f"Published: Temp={payload['readings']['temperature']['value']}°C, "
                             f"Humidity={payload['readings']['humidity']['value']}%")
                 else:
-                    logger.error(f"❌ Publish failed with code {result.rc}")
+                    logger.error(f"Publish failed with code {result.rc}")
                 
                 # Esperar intervalo
                 time.sleep(PUBLISH_INTERVAL)
                 
         except KeyboardInterrupt:
-            logger.info("🛑 Sensor stopped by user")
+            logger.info("Sensor stopped by user")
         except Exception as e:
-            logger.error(f"❌ Error: {e}", exc_info=True)
+            logger.error(f"Error: {e}", exc_info=True)
         finally:
             self.client.loop_stop()
             self.client.disconnect()
