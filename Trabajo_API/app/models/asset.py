@@ -62,11 +62,32 @@ class User(SQLModel, table=True):
     assets: List["Asset"] = Relationship(
         back_populates="owner"
     )  # Relación uno a muchos con el modelo Asset, indicando que un usuario puede tener múltiples activos
+    #Para relacionar un usuario con sus propios mensajes
+    messages: List["Message"] = Relationship(
+        back_populates="owner"
+    )  # Relación uno a muchos con el modelo Message, indicando que un usuario puede tener múltiples mensajes
+
+class Message(SQLModel, table=True):
+    id: Optional[int] = Field(
+        default=None, primary_key=True
+    )  # Id del mensaje, tiene un valor único gracias a primary_key=True
+    content: str = Field(
+        max_length=500
+    )  # Contenido del mensaje, con restricción de longitud máxima
+    owner_id: int = Field(
+        foreign_key="user.id", index=True
+    )  # ID del usuario propietario, clave foránea a la tabla 'user' e indexada
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )  # Fecha y hora de creación del mensaje, usando la hora UTC actual como valor por defecto
+    # Para relacionar un mensaje con su usuario propietario:
+    owner: Optional[User] = Relationship(
+        back_populates="messages"
+    )  # Relación muchos a uno con el modelo User, indicando que muchos mensajes pueden pertenecer a un usuario
 
 
 """Aqui se define el modelo que tiene un activo cualquiera que la API maneja,
 similar al modelo en user.py pero adaptado a las necesidades de los activos IT."""
-
 
 class Asset(SQLModel, table=True):
     id: Optional[int] = Field(

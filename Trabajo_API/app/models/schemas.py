@@ -1,5 +1,5 @@
 # importaciones necesarias
-from pydantic import BaseModel, Field, validator, EmailStr
+from pydantic import BaseModel, Field, field_validator, EmailStr
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -33,7 +33,7 @@ class UserCreate(BaseModel): #Schema para crear un usuario
     email: EmailStr # Validacion de formato de email
     password: str = Field(min_length=8, max_length=128) # Validacion de longitud de la contraseña
     
-    @validator('username') # Validacion personalizada del nombre de usuario
+    @field_validator('username') # Validacion personalizada del nombre de usuario
     def validate_username(cls, v): # Validar caracteres permitidos
         if not re.match("^[a-zA-Z0-9_.-]+$", v): # Solo letras, numeros y caracteres _ . -
             raise ValueError("Username can only contain letters, numbers, and characters: _ . -")
@@ -45,7 +45,7 @@ class UserCreate(BaseModel): #Schema para crear un usuario
         
         return v
 
-    @validator('password') # Validacion personalizada de la contraseña
+    @field_validator('password') # Validacion personalizada de la contraseña
     def validate_password(cls, v):
         if not re.search(r"[A-Z]", v): # Al menos una letra mayuscula
             raise ValueError("La contraseña debe tener al menos una letra mayúscula.")
@@ -61,18 +61,6 @@ class UserCreate(BaseModel): #Schema para crear un usuario
         
         return v
 
-
-
-
-
-
-
-
-
-
-
-
-"""
 class UserOut(BaseModel):
     id: int
     username: str
@@ -96,4 +84,3 @@ class MessageOut(BaseModel):
     class Config:
         from_attributes = True
 
-"""
