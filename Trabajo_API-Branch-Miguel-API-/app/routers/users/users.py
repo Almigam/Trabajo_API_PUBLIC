@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select, func, col
 from typing import List
 import logging
 from app.models.asset import User
@@ -30,7 +30,7 @@ def list_users( # Definir la funcion para listar usuarios
     
     return users # Devolver la lista de usuarios
 
-@router.get("/{user_id}", response_model=List[UserOut]) # Obtener detalles de un usuario por ID
+@router.get("/{user_id}", response_model=UserOut) # Obtener detalles de un usuario por ID
 def get_user(
     user_id: int = Path(..., gt=0), # Parametro de ruta para el ID del usuario, debe ser mayor que 0
     current_user: dict = Depends(get_current_user), # Dependencia para obtener el usuario actual
@@ -56,7 +56,12 @@ def get_user(
         current_user_db = session.exec( # Obtener el usuario actual desde la base de datos
             select(User).where(User.username == current_user["username"]) # Filtrar por nombre de usuario
         ).first() # Obtener el primer resultado
-        
+
+        if not current_user_db:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Current user not found."
+            )       
         if current_user_db.id != user_id: # Si el ID del usuario actual no coincide con el ID solicitado
             raise HTTPException( # Lanzar excepcion de acceso denegado
                 status_code=status.HTTP_403_FORBIDDEN, # Codigo de estado 403 Forbidden
@@ -67,8 +72,8 @@ def get_user(
 
 @router.put("/{user_id}", response_model=UserOut) # Actualizar informacion de un usuario por ID
 def update_user( # Definir la funcion para actualizar usuario
+    user_data: UserUpdate, # Parametro del cuerpo de la solicitud con los datos a actualizar
     user_id: int = Path(..., gt=0), # Parametro de ruta para el ID del usuario, debe ser mayor que 0
-    user_data: UserUpdate = ..., # Parametro del cuerpo de la solicitud con los datos a actualizar
     current_user: dict = Depends(require_admin), # Dependencia para verificar que el usuario actual es admin
     session: Session = Depends(get_session) # Dependencia para obtener la sesion de base de datos
 ):
@@ -107,7 +112,10 @@ def update_user( # Definir la funcion para actualizar usuario
 #Prevenir que el ultimo admin se desactive o cambie rol
     if user.role == "admin": # Si el usuario a actualizar es admin
         admin_count = session.exec( # Contar numero de admins activos
-            select(func.count(User.id)).where(User.role == "admin", User.is_active == True) # Filtrar por rol admin y estado activo
+            select(func.count(col(User.id))).where(
+                User.role == "admin", # Filtrar por rol admin y estado activo
+                User.is_active == True
+                ) 
         ).one() # Obtener el conteo
         
         if admin_count == 1: # Si solo hay un admin activo
@@ -160,7 +168,7 @@ def delete_user( # Definir la funcion para eliminar usuario
     #Prevenir que el ultimo admin sea eliminado
     if user.role == "admin" : # Si el usuario a eliminar es admin
         admin_count = session.exec( # Contar numero de admins activos
-            select(func.count(User.id)).where(User.role == "admin", User.is_active == True) # Filtrar por rol admin y estado activo
+            select(func.count(col(User.id))).where(User.role == "admin", User.is_active == True) # Filtrar por rol admin y estado activo
         ).one() # Obtener el conteo
         
         if admin_count == 1: # Si solo hay un admin activo
@@ -173,6 +181,12 @@ def delete_user( # Definir la funcion para eliminar usuario
     current_user_db = session.exec( # Obtener el usuario actual desde la base de datos
         select(User).where(User.username == current_user["username"]) # Filtrar por nombre de
     ).first() # Obtener el primer resultado
+
+    if not current_user_db: # Verificar que el usuario existe, si no lanzar excepción
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current user not found."
+        )
     
     if current_user_db.id == user_id: # Si el ID del usuario actual coincide con el ID a eliminar
         raise HTTPException( # Lanzar excepcion si se intenta eliminar a si mismo

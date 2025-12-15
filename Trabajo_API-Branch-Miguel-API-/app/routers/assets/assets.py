@@ -292,8 +292,8 @@ def create_asset(
 
 @router.put("/{asset_id}", response_model=AssetOut)
 def update_asset(
-    asset_id: int = Path(..., gt=0),
     asset_data: AssetUpdate,
+    asset_id: int = Path(..., gt=0),
     current_user: dict = Depends(require_admin),
     session: Session = Depends(get_session),
 ):

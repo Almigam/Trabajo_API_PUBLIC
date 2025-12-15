@@ -86,6 +86,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware): # Aqui tenemos el middlewar
         )
         
         # Elimina las cabeceras que revelan tecnologia del servidor
-        response.headers.pop("Server", None)
+        if "server" in response.headers: # transformado a una expresion condicional para evitar el keyerror
+            del response.headers["server"]
         
         return response   
