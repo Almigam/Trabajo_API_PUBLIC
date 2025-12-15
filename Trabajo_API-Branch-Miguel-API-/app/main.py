@@ -43,9 +43,9 @@ allowed_origins = os.getenv( # Creamos una variable, la cual contenga direccione
     "http://localhost:3000, http://localhost:8000"
 ).split(",")
 
-app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler) # Definimos que cada vez que slowapi detecte que se excedió el limite  
-                                                                        # de peticiones, en vez de recurrir al manejo de errores por defecto,  
-                                                                        # que llame a nuestra funcion handler
+# Registrar el handler de rate limit con type: ignore para resolver el problema de tipos
+# exception handler es una funcion que maneja errores especificos en fastapi
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore
 
 app.add_middleware( # Mediante la configuracion del middleware CORS, controlamos que origenes pueden hacer peticiones y con que parametros 
     CORSMiddleware,

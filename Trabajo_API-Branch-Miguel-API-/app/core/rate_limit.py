@@ -41,10 +41,10 @@ limiter = Limiter( # Inicializamos el limitador de peticiones, la pieza central 
 # 
 # Devuelve finalente una response con codigo 429 con un mensaje explicando al cliente porque ha fallado su request#
 
-def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
 
     client_host = request.client.host if request.client else "unknown"
-    logger.warning(f"Rate limit exceeded for {client_host} on {request.url.path}") # Creamos el log, con la IP del cliente que excedió el limite y 
+    logger.warning(f"Rate limit exceeded for {client_host} on {request.url.path}: {exc.detail}") # Creamos el log, con la IP del cliente que excedió el limite y 
                                                                                         # en que endpoint ha pasado. Con .warning indicamos que es un 
                                                                                         # evento que requiere atencion, pero no es critico
     

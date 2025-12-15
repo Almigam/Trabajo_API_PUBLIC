@@ -31,7 +31,7 @@ RATE_LIMITS = {
     "api_intensive": "20/minute"   # Operaciones intensivas: 20 por minuto
 }
 
-def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """
     Handler personalizado para errores de rate limit
     
