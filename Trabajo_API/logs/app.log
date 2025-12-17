@@ -1,8 +1,0 @@
-2025-12-15 17:40:44 - root - INFO - Logging configurado correctamente
-2025-12-15 17:41:25 - root - INFO - Logging configurado correctamente
-2025-12-15 17:41:25 - app.main - INFO - Iniciando API de Inventario de Activos...
-2025-12-15 17:41:25 - app.core.database - INFO - Creando tablas de la base de datos...
-2025-12-15 17:41:25 - app.core.database - INFO - Tablas de la base de datos creadas correctamente
-2025-12-15 17:41:25 - app.main - INFO - API preparada para recibir solicitudes
-2025-12-15 17:41:29 - app.main - WARNING - Error HTTP 404 en /: Not Found
-2025-12-15 17:41:31 - app.main - WARNING - Error HTTP 404 en /: Not Found
