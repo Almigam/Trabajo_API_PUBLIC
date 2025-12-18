@@ -1,0 +1,175 @@
+# Red personalizada para aislamiento
+networks:
+  agriculture-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+services:
+  # === MQTT Broker ===
+  mosquitto:
+    build: ./mosquitto
+    container_name: mqtt-broker
+    hostname: mosquitto
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.10
+    ports:
+      - "1883:1883"  # MQTT
+      - "9001:9001"  # WebSocket
+    volumes:
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # === Asset Inventory API ===
+  asset-api:
+    build: ../  #API
+    container_name: asset-api
+    user: "root"
+    hostname: asset-api
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.20
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=sqlite:///./database/data.db
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_ORIGINS=http://localhost:3000
+    volumes:
+      - api-data:/app/database
+      - api-logs:/app/logs
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # === MQTT Gateway ===
+  mqtt-gateway:
+    build: ./gateway
+    container_name: mqtt-gateway
+    hostname: mqtt-gateway
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.30
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - API_URL=http://asset-api:8002
+      - API_USERNAME=superjefe
+      - API_PASSWORD=P@ssw0rd!
+    depends_on:
+      - mosquitto
+      - asset-api
+    restart: unless-stopped
+
+  # === IoT Sensors ===
+  temp-sensor-001:
+    build: ./sensors
+    container_name: temp-sensor-001
+    hostname: temp-dht22-001
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.101
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - SENSOR_ID=temp_dht22_001
+      - ASSET_ID=10
+      - LOCATION=greenhouse_a
+      - PUBLISH_INTERVAL=10
+    command: python temperature_sensor.py
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  temp-sensor-002:
+    build: ./sensors
+    container_name: temp-sensor-002
+    hostname: temp-dht22-002
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.102
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - SENSOR_ID=temp_dht22_002
+      - ASSET_ID=11
+      - LOCATION=greenhouse_b
+      - PUBLISH_INTERVAL=15
+    command: python temperature_sensor.py
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  soil-sensor-001:
+    build: ./sensors
+    container_name: soil-sensor-001
+    hostname: soil-cap-001
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.103
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - SENSOR_ID=soil_cap_001
+      - ASSET_ID=12
+      - LOCATION=field_section_a
+      - PUBLISH_INTERVAL=30
+    command: python soil_moisture_sensor.py
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  soil-sensor-002:
+    build: ./sensors
+    container_name: soil-sensor-002
+    hostname: soil-cap-002
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.104
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - SENSOR_ID=soil_cap_002
+      - ASSET_ID=13
+      - LOCATION=field_section_b
+      - PUBLISH_INTERVAL=30
+    command: python soil_moisture_sensor.py
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  # === Frontend Dashboard ===
+  frontend:
+    build: ../frontend
+    container_name: agriculture-dashboard
+    hostname: frontend
+    networks:
+      agriculture-net:
+        ipv4_address: 172.28.0.40
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8002
+      - REACT_APP_MQTT_WS_URL=ws://localhost:9001
+    depends_on:
+      - asset-api
+      - mosquitto
+    restart: unless-stopped
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:
+  api-data:
+  api-logs:
