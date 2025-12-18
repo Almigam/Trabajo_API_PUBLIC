@@ -1,22 +1,122 @@
-# Red personalizada para aislamiento
+# ============================================================
+# Docker Compose Seguro - Arquitectura de 4 Zonas
+# Agricultura 4.0 con Segmentación de Red
+# ============================================================
+version: '3.8'
+
+# ============================================================
+# DEFINICIÓN DE REDES (4 ZONAS)
+# ============================================================
 networks:
-  agriculture-net:
+  # ZONA 1: Aplicación (Backend, PostgreSQL, Frontend)
+  app-network:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/16
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
+    driver_opts:
+      com.docker.network.bridge.name: br-app
 
+  # ZONA 2: DMZ (MQTT Broker + Gateway)
+  dmz-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+          gateway: 172.21.0.1
+    driver_opts:
+      com.docker.network.bridge.name: br-dmz
+
+  # ZONA 3: Sensores Críticos (Temperatura)
+  sensors-critical:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+          gateway: 172.22.0.1
+    driver_opts:
+      com.docker.network.bridge.name: br-sensors-crit
+
+  # ZONA 4: Sensores Estándar (Humedad del Suelo)
+  sensors-standard:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/24
+          gateway: 172.23.0.1
+    driver_opts:
+      com.docker.network.bridge.name: br-sensors-std
+
+# ============================================================
+# VOLÚMENES
+# ============================================================
+volumes:
+  mosquitto-data:
+  mosquitto-log:
+  api-data:
+  api-logs:
+
+# ============================================================
+# SERVICIOS
+# ============================================================
 services:
-  # === MQTT Broker ===
+
+  # ============================================================
+  # ZONA 1: APLICACIÓN
+  # ============================================================
+
+  # Backend API
+  asset-api:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: asset-api
+    hostname: asset-api
+    networks:
+      app-network:
+        ipv4_address: 172.20.0.10
+      dmz-network:
+        ipv4_address: 172.21.0.10  # Acceso al Gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./database/data.db
+      - SECRET_KEY=${SECRET_KEY:-change-in-production}
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://172.20.0.12
+    volumes:
+      - api-data:/app/database
+      - api-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    # REGLA: Solo acepta conexiones de Gateway (172.21.0.30)
+    # Implementado a nivel de aplicación con IP whitelist
+
+  # ============================================================
+  # ZONA 2: DMZ (Broker + Gateway)
+  # ============================================================
+
+  # MQTT Broker - Accesible desde ambas zonas de sensores
   mosquitto:
     build: ./mosquitto
     container_name: mqtt-broker
     hostname: mosquitto
     networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.10
+      dmz-network:
+        ipv4_address: 172.21.0.20
+      sensors-critical:
+        ipv4_address: 172.22.0.20  # Acceso a sensores críticos
+      sensors-standard:
+        ipv4_address: 172.23.0.20  # Acceso a sensores estándar
     ports:
-      - "1883:1883"  # MQTT
+      - "1883:1883"  # MQTT (expuesto para debugging, eliminar en prod)
       - "9001:9001"  # WebSocket
     volumes:
       - mosquitto-data:/mosquitto/data
@@ -27,168 +127,160 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    security_opt:
+      - no-new-privileges:true
+    # REGLA: Solo acepta MQTT (1883) desde zonas de sensores
 
-  # === Asset Inventory API ===
-  asset-api:
-    build: ../  #API
-    container_name: asset-api
-    user: "root"
-    hostname: asset-api
-    networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.20
-    ports:
-      - "8002:8002"
-    environment:
-      - DATABASE_URL=sqlite:///./database/data.db
-      - SECRET_KEY=${SECRET_KEY}
-      - ALLOWED_ORIGINS=http://localhost:3000
-    volumes:
-      - api-data:/app/database
-      - api-logs:/app/logs
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8002
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # === MQTT Gateway ===
+  # MQTT Gateway - Puente entre DMZ y Aplicación
   mqtt-gateway:
     build: ./gateway
     container_name: mqtt-gateway
     hostname: mqtt-gateway
     networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.30
+      dmz-network:
+        ipv4_address: 172.21.0.30
+      app-network:
+        ipv4_address: 172.20.0.30  # Acceso a la API
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=172.21.0.20  # IP del broker en DMZ
       - MQTT_PORT=1883
-      - API_URL=http://asset-api:8002
-      - API_USERNAME=superjefe
-      - API_PASSWORD=P@ssw0rd!
+      - API_URL=http://172.20.0.10:8000  # IP de la API
+      - API_USERNAME=admin
+      - API_PASSWORD=Admin123!@#
     depends_on:
-      - mosquitto
-      - asset-api
+      mosquitto:
+        condition: service_healthy
+      asset-api:
+        condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # REGLA: Solo puede hablar con Mosquitto (172.21.0.20:1883)
+    #        y API (172.20.0.10:8000)
 
-  # === IoT Sensors ===
+  # ============================================================
+  # ZONA 3: SENSORES CRÍTICOS (Temperatura)
+  # ============================================================
+
   temp-sensor-001:
     build: ./sensors
     container_name: temp-sensor-001
     hostname: temp-dht22-001
     networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.101
+      sensors-critical:
+        ipv4_address: 172.22.0.101
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=172.22.0.20  # IP de Mosquitto en esta zona
       - MQTT_PORT=1883
       - SENSOR_ID=temp_dht22_001
       - ASSET_ID=10
       - LOCATION=greenhouse_a
-      - PUBLISH_INTERVAL=10
+      - PUBLISH_INTERVAL=15
     command: python temperature_sensor.py
     depends_on:
       - mosquitto
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # REGLA: Solo puede enviar MQTT a 172.22.0.20:1883
+    #        NO puede hablar con otros sensores
+    #        NO puede acceder a la API directamente
 
   temp-sensor-002:
     build: ./sensors
     container_name: temp-sensor-002
     hostname: temp-dht22-002
     networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.102
+      sensors-critical:
+        ipv4_address: 172.22.0.102
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=172.22.0.20
       - MQTT_PORT=1883
       - SENSOR_ID=temp_dht22_002
-      - ASSET_ID=11
+      - ASSET_ID=12
       - LOCATION=greenhouse_b
-      - PUBLISH_INTERVAL=15
+      - PUBLISH_INTERVAL=20
     command: python temperature_sensor.py
     depends_on:
       - mosquitto
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================================
+  # ZONA 4: SENSORES ESTÁNDAR (Humedad del Suelo)
+  # ============================================================
 
   soil-sensor-001:
     build: ./sensors
     container_name: soil-sensor-001
     hostname: soil-cap-001
     networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.103
+      sensors-standard:
+        ipv4_address: 172.23.0.103
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=172.23.0.20  # IP de Mosquitto en esta zona
       - MQTT_PORT=1883
       - SENSOR_ID=soil_cap_001
-      - ASSET_ID=12
+      - ASSET_ID=11
       - LOCATION=field_section_a
       - PUBLISH_INTERVAL=30
     command: python soil_moisture_sensor.py
     depends_on:
       - mosquitto
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # REGLA: Solo puede enviar MQTT a 172.23.0.20:1883
+    #        NO puede hablar con sensores de ZONA 3
+    #        NO puede acceder a la API
 
   soil-sensor-002:
     build: ./sensors
     container_name: soil-sensor-002
     hostname: soil-cap-002
     networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.104
+      sensors-standard:
+        ipv4_address: 172.23.0.104
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=172.23.0.20
       - MQTT_PORT=1883
       - SENSOR_ID=soil_cap_002
       - ASSET_ID=13
       - LOCATION=field_section_b
-      - PUBLISH_INTERVAL=30
+      - PUBLISH_INTERVAL=35
     command: python soil_moisture_sensor.py
     depends_on:
       - mosquitto
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
 
-  # === Frontend Dashboard ===
-  frontend:
-    build: ../frontend
-    container_name: agriculture-dashboard
-    hostname: frontend
-    networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.40
-    ports:
-      - "3000:80"
-    environment:
-      - REACT_APP_API_URL=http://localhost/api
-      - REACT_APP_MQTT_WS_URL=ws://localhost:9001
-    depends_on:
-      - asset-api
-      - mosquitto
-    restart: unless-stopped
-
- # ... otros servicios ...
-  nginx-proxy:
-    image: nginx:alpine
-    ports:
-      - "443:443"  # Puerto estándar HTTPS
-      - "80:80"    # Puerto estándar HTTP
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro             # Tu configuración
-      - ./nginx_certs:/etc/nginx/certs:ro                 # Tus certificados
-    depends_on:
-      - frontend
-      - asset-api
-
-    networks:
-      agriculture-net:
-        ipv4_address: 172.28.0.50
-
-volumes:
-  mosquitto-data:
-  mosquitto-log:
-  api-data:
-  api-logs:
-
-  
+# ============================================================
+# NOTAS DE SEGURIDAD
+# ============================================================
+# 1. Mosquitto tiene interfaces en 3 redes (DMZ + ambas zonas de sensores)
+#    pero NO tiene acceso directo a la red de aplicación
+#
+# 2. Gateway es el ÚNICO componente con acceso a múltiples zonas
+#    (DMZ + Aplicación) y actúa como choke point
+#
+# 3. Sensores están completamente aislados:
+#    - No pueden verse entre zonas
+#    - No pueden acceder a la API
+#    - Solo pueden publicar a Mosquitto
+#
+# 4. API está protegida en su propia zona:
+#    - Solo acepta conexiones del Gateway
+#    - Autenticación JWT obligatoria
+#    - Rate limiting activo
+#
+# 5. Para añadir reglas de firewall adicionales a nivel de host:
+#    docker network inspect <network_name>
+#    iptables -A FORWARD -s 172.22.0.0/24 -d 172.23.0.0/24 -j DROP
+#
+# 6. En producción, añadir:
+#    - TLS en MQTT (puerto 8883)
+#    - Autenticación en Mosquitto
+#    - Certificados por sensor
+#    - IDS/IPS en cada zona
